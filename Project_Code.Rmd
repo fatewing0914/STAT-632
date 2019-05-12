@@ -1,0 +1,297 @@
+---
+title: "Project Code - Investigate the Relationship between the Rating of an App on Google Play Store and Its Other Features"
+author: "Yajing Xie"
+date: "May 3, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+Retrieve the data
+```{r}
+setwd('C:/Users/clair/Desktop/CSUEB/Spring 19/STAT 632/Project')
+playstore <- read.csv('googleplaystore.csv', header = TRUE)
+playstore <- na.omit(playstore)
+```
+
+Investigate, clean and pre-process the variables
+```{r}
+levels(playstore$Category)
+playstore$Category[playstore$Category == '1.9'] <- NA
+playstore <- na.omit(playstore)
+```
+```{r}
+playstore$Reviews <- as.numeric(playstore$Reviews)
+playstore <- na.omit(playstore)
+```
+```{r}
+playstore$Size <- unlist(lapply(playstore$Size, as.character))
+library(stringr)
+for (i in 1:length(playstore$Size)){
+    if (endsWith(playstore$Size[i],'M') == TRUE){
+        playstore$Size[i] <- 1000000*(as.numeric(paste(str_split(playstore$Size[i],'')[[1]][-length(str_split(playstore$Size[i],'')[[1]])],collapse = '')))
+    }
+    else if (endsWith(playstore$Size[[i]],'k') == TRUE) {
+        playstore$Size[i] <- 1000*(as.numeric(paste(str_split(playstore$Size[i],'')[[1]][-length(str_split(playstore$Size[i],'')[[1]])],collapse = '')))
+    }
+    else if (endsWith(playstore$Size[[i]],'+') == TRUE){
+        playstore$Size[i] <- as.numeric(paste(str_split(playstore$Size[i],'')[[1]][-length(str_split(playstore$Size[i],'')[[1]])],collapse = ''))
+    }
+    else {playstore$Size[i] <- NA}
+}
+playstore$Size <- unlist(lapply(playstore$Size, as.numeric))
+playstore <- na.omit(playstore)
+```
+```{r}
+levels(playstore$Installs)
+playstore$Installs[playstore$Installs == 'Free'] <- NA
+playstore <- na.omit(playstore)
+playstore$Installs <- factor(playstore$Installs, levels = c('0','0+','1+','5+','10+','50+','100+','500+','1,000+','5,000+','10,000+','50,000+','100,000+','500,000+','1,000,000+','5,000,000+','10,000,000+','50,000,000+','100,000,000+','500,000,000+','1,000,000,000+'))
+levels(playstore$Installs)
+```
+```{r}
+levels(playstore$Type)
+playstore$Type[playstore$Type == '0'] <- NA
+playstore$Type[playstore$Type == 'NaN'] <- NA
+playstore <- na.omit(playstore)
+playstore$Type <- factor(playstore$Type, levels = c('Free', 'Paid'))
+```
+```{r}
+levels(playstore$Type)
+playstore$Price[playstore$Price == 'Everyone'] <- NA
+playstore <- na.omit(playstore)
+playstore$Price <- unlist(lapply(playstore$Price, as.character))
+for (i in 1:(length(playstore$Price))){
+    if (is.na(playstore$Price[i]) == FALSE & startsWith(playstore$Price[i],'$') == TRUE){
+        playstore$Price[i] <- as.numeric(paste(str_split(playstore$Price[i],'')[[1]][-1],collapse = ''))
+    }
+}
+playstore$Price <- unlist(lapply(playstore$Price, as.numeric))
+```
+```{r}
+levels(playstore$Content.Rating)
+playstore$Content.Rating[playstore$Content.Rating == ''] <- NA
+playstore <- na.omit(playstore)
+playstore$Content.Rating <- factor(playstore$Content.Rating, levels = c('Unrated','Everyone', 'Everyone 10+','Teen','Mature 17+','Adults only 18+'))
+```
+```{r}
+levels(playstore$Genres)
+#Too many levels
+```
+```{r}
+playstore$Days.From.Last.Updated <- as.numeric(Sys.Date()-as.Date(as.character(playstore$Last.Updated), format = '%B %d, %Y'))
+```
+```{r}
+levels(playstore$Android.Ver)
+playstore$Android.Ver[playstore$Android.Ver == ''] <- NA
+playstore$Android.Ver[playstore$Android.Ver == 'NaN'] <- NA
+playstore$Android.Ver[playstore$Android.Ver == 'Varies with device'] <- NA
+playstore <- na.omit(playstore)
+
+playstore$Lowest.Android.Version <- rep(0,length(playstore$Android.Ver))
+playstore$Android.Ver <- unlist(lapply(playstore$Android.Ver, as.character))
+for (i in 1:(length(playstore$Android.Ver))){
+    playstore$Lowest.Android.Version[i] <- paste(str_split(playstore$Android.Ver[i],'')[[1]][1:3], collapse = '')
+}
+playstore$Lowest.Android.Version <- factor(playstore$Lowest.Android.Version)
+```
+```{r}
+str(playstore)
+```
+
+Split data into training & testing Set
+```{r}
+set.seed(999)
+playstore$No <- 1:length(playstore$App)
+library(dplyr)
+trainset <- playstore %>%
+ group_by(Category, Content.Rating, Lowest.Android.Version) %>%
+ sample_frac(0.7)
+testset <- playstore[-trainset$No,]
+y_train <- trainset$Rating
+y_test <- testset$Rating
+trainset_x <- trainset[,-c(1,3,10,11,12,13,16)]
+testset_x <- testset[,-c(1,3,10,11,12,13,16)]
+x_train <- model.matrix(~ ., data = trainset_x)
+x_test <- model.matrix(~ ., data = testset_x)
+```
+
+MLR full model, check the residuals
+```{r}
+lm_full <- lm(Rating ~ Category + Reviews + Size + Installs + Type + Price + Content.Rating + Days.From.Last.Updated + Lowest.Android.Version, data = trainset)
+summary(lm_full)
+par(mfrow = c(1,2))
+plot(predict(lm_full),rstandard(lm_full),
+     xlab = 'Fitted Values', ylab = 'Standardized Residuals')
+abline(h = 0)
+qqnorm(rstandard(lm_full))
+qqline(rstandard(lm_full))
+p <- 9
+n <- nrow(trainset)
+plot(hatvalues(lm_full), rstandard(lm_full),
+     xlab = 'Leverage', ylab = 'Standardized Residuals')
+abline( v = 2 * (p+1)/n, lty = 2)
+```
+
+Multicollinearity checking
+```{r}
+round(cor(trainset_x[,-c(1,4,5,7,9)]),2)
+library(faraway)
+round(vif(lm_full),2)
+sum(vif(lm_full) > 5)
+```
+
+Box-Cox Transformation 
+```{r}
+library(MASS)
+library(alr4)
+boxcox(lm_full, lambda = seq(4,5,0.05))
+summary(powerTransform(lm_full))
+summary(powerTransform(cbind(Reviews, Size, Days.From.Last.Updated) ~ 1, trainset_x))
+lm_full_trans <- lm(Rating ~ Category + sqrt(Reviews) + log(Size) + Installs + Type + Price + Content.Rating + 1/Days.From.Last.Updated + Lowest.Android.Version, data = trainset)
+summary(lm_full_trans)
+```
+
+Backwards Elimination
+```{r}
+BE_lm_1 <- update(lm_full, ~ . - Reviews)
+summary(BE_lm_1)
+
+BE_lm_2 <- update(BE_lm_1, ~ . - Lowest.Android.Version)
+summary(BE_lm_2)
+
+BE_lm_3 <- update(BE_lm_2, ~ . - Content.Rating)
+summary(BE_lm_3)
+
+BE_lm_4 <- update(BE_lm_3, ~ . - Size)
+summary(BE_lm_4)
+```
+
+
+Backward Stepwise Selection
+```{r}
+lm_BSS <- step(lm_full, trace = F)
+summary(lm_BSS)
+```
+formula = Rating ~ Category + Installs + Type + Price + Days.From.Last.Updated + 
+    Lowest.Android.Version
+
+Ridge Regression
+```{r}
+library(glmnet)
+ridge_mod <- glmnet(x_train, y_train, alpha = 0)
+set.seed(1)
+ridge_cvfit <- cv.glmnet(x_train, y_train, alpha = 0)
+ridge_cvfit$lambda.min
+plot(ridge_mod,xvar = 'lambda')
+abline(v = log(ridge_cvfit$lambda.min))
+coef(ridge_cvfit, s = 'lambda.min')
+```
+
+LASSO Regression
+```{r}
+lasso_mod <- glmnet(x_train,y_train, alpha = 1)
+set.seed(1)
+lasso_cvfit <- cv.glmnet(x_train, y_train, alpha = 1)
+lasso_cvfit$lambda.min
+plot(lasso_mod,xvar = 'lambda')
+abline(v = log(lasso_cvfit$lambda.min))
+coef(lasso_cvfit, s = 'lambda.min')
+lasso_coefs <- as.numeric(coef(lasso_cvfit, s = 'lambda.min'))
+sum(abs(lasso_coefs) > 0)
+```
+
+Decision Tree
+```{r}
+library(tree)
+trainset_for_dt <- trainset
+trainset_for_dt$Category[trainset_for_dt$Category == 'PARENTING'] <- 'FAMILY'
+trainset_for_dt$Category <- droplevels(trainset_for_dt$Category)
+dt1 <- tree(Rating ~ Category + Reviews + Size + Installs + Type + Price + Content.Rating + Days.From.Last.Updated + Lowest.Android.Version, data = trainset_for_dt)
+summary(dt1)
+plot(dt1)
+text(dt1, pretty = 0)
+```
+
+Random Forest
+```{r}
+library(randomForest)
+set.seed(999)
+rf1 <- randomForest(Rating ~ Category + Reviews + Size + Installs + Type + Price + Content.Rating + Days.From.Last.Updated + Lowest.Android.Version, data = trainset, importance = TRUE)
+rf1
+plot(predict(rf1), trainset$Rating,xlab = 'OOB Predictions', ylab = 'Observed Values', xlim = c(1,5), ylim = c(1,5))
+abline(0,1, col = 'red', lwd = 2)
+plot(c(1:500), rf1$mse, xlab = 'ntree', ylab = 'MSE', type = 'l')
+varImpPlot(rf1, type = 1)
+```
+
+Cross-Validation for all the above models
+```{r}
+compute_mse <- function(y,y_pred){
+    n <- length(y)
+    return((1/n)*sum((y - y_pred)^2))
+}
+#OLS full model
+lm_pred <- predict(lm_full, newdata = testset)
+compute_mse(y_test,lm_pred)
+#OLS Backwards Elimination
+BE_lm_pred <- predict(BE_lm_4, newdata = testset)
+compute_mse(y_test, BE_lm_pred)
+#Backwards Stepwide Selection
+lm_step_pred <- predict(lm_BSS, newdata = testset)
+compute_mse(y_test, lm_step_pred)
+#Ridge Regression
+library(glmnet)
+ridge_pred <- predict(ridge_cvfit, newx = x_test, s = 'lambda.min')
+ridge_pred <- as.numeric(ridge_pred)
+compute_mse(y_test, ridge_pred)
+#LASSO Regression
+lasso_pred <- predict(lasso_cvfit, newx = x_test, s = 'lambda.min')
+lasso_pred <- as.numeric(lasso_pred)
+compute_mse(y_test, lasso_pred)
+#Random Forest
+library(randomForest)
+rf1_pred <- predict(rf1, newdata = testset)
+compute_mse(y_test, rf1_pred)
+```
+
+Standardize all the numeric variables then re-do the full linear model, backwards step selection, Ridge and LASSO regularization, and the cross-validation
+```{r}
+trainset$ReviewsStd <- (trainset$Reviews - mean(trainset$Reviews))/(sd(trainset$Reviews))
+trainset$SizeStd <- (trainset$Size - mean(trainset$Size))/(sd(trainset$Size))
+trainset$PriceStd <- (trainset$Price -  mean(trainset$Price))/(sd(trainset$Price))
+trainset$Days.Std <- (trainset$Days.From.Last.Updated -  mean(trainset$Days.From.Last.Updated))/(sd(trainset$Days.From.Last.Updated))
+testset$PriceStd <- (testset$Price - mean(testset$Price))/(sd(testset$Price))
+testset$Days.Std <- (testset$Days.From.Last.Updated - mean(testset$Days.From.Last.Updated))/(sd(testset$Days.From.Last.Updated))
+testset$ReviewsStd <- (testset$Reviews - mean(testset$Reviews))/(sd(testset$Reviews))
+testset$SizeStd <- (testset$Size - mean(testset$Size))/(sd(testset$Size))
+y_train <- trainset$Rating
+y_test <- testset$Rating
+trainset_x <- trainset[,-c(1,3,4,5,8,10,11,12,13,14,16)]
+testset_x <- testset[,-c(1,3,4,5,8,10,11,12,13,14,16)]
+x_train <- model.matrix(~ ., data = trainset_x)
+x_test <- model.matrix(~ ., data = testset_x)
+lm_sd_full <- lm(Rating ~ Category + ReviewsStd + SizeStd + Installs + Type + PriceStd + Content.Rating + Days.Std + Lowest.Android.Version, data = trainset)
+summary(lm_sd_full)
+lm_sd_BSS <- step(lm_sd_full, trace = F)
+ridge_sd_cvfit <- cv.glmnet(x_train, y_train, alpha = 0)
+lasso_sd_cvfit <- cv.glmnet(x_train, y_train, alpha = 1)
+#Cross Validation
+#OLS full model with Standardized Variables
+lm_sd_full_pred <- predict(lm_sd_full, newdata = testset)
+compute_mse(y_test, lm_sd_full_pred)
+#Backwards Stepwide Selection with Standardized Variables
+lm_sd_step_pred <- predict(lm_sd_BSS, newdata = testset)
+compute_mse(y_test, lm_sd_step_pred)
+#Ridge Regression with Standardized Variables
+library(glmnet)
+ridge_sd_pred <- predict(ridge_sd_cvfit, newx = x_test, s = 'lambda.min')
+ridge_sd_pred <- as.numeric(ridge_sd_pred)
+compute_mse(y_test, ridge_sd_pred)
+#LASSO Regression with Standardized Variables
+lasso_sd_pred <- predict(lasso_sd_cvfit, newx = x_test, s = 'lambda.min')
+lasso_sd_pred <- as.numeric(lasso_sd_pred)
+compute_mse(y_test, lasso_sd_pred)
+```
+
+```
+
