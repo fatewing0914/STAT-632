@@ -94,9 +94,13 @@ for (i in 1:(length(playstore$Android.Ver))){
 }
 playstore$Lowest.Android.Version <- factor(playstore$Lowest.Android.Version)
 ```
+
+Roughly examine the data after cleaning by checking out scatter plot matrix
 ```{r}
 str(playstore)
+pairs(Rating ~ Category + Reviews + Size + Installs + Type + Price + Content.Rating + Days.From.Last.Updated + Lowest.Android.Version, data = playstore)
 ```
+
 
 Split data into training & testing Set
 ```{r}
@@ -273,8 +277,11 @@ x_test <- model.matrix(~ ., data = testset_x)
 lm_sd_full <- lm(Rating ~ Category + ReviewsStd + SizeStd + Installs + Type + PriceStd + Content.Rating + Days.Std + Lowest.Android.Version, data = trainset)
 summary(lm_sd_full)
 lm_sd_BSS <- step(lm_sd_full, trace = F)
+summary(lm_sd_BSS)
 ridge_sd_cvfit <- cv.glmnet(x_train, y_train, alpha = 0)
+coef(ridge_sd_cvfit, s = 'lambda.min')
 lasso_sd_cvfit <- cv.glmnet(x_train, y_train, alpha = 1)
+coef(lasso_sd_cvfit, s = 'lambda.min')
 #Cross Validation
 #OLS full model with Standardized Variables
 lm_sd_full_pred <- predict(lm_sd_full, newdata = testset)
