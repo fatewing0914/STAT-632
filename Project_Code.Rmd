@@ -298,6 +298,12 @@ compute_mse(y_test, ridge_sd_pred)
 lasso_sd_pred <- predict(lasso_sd_cvfit, newx = x_test, s = 'lambda.min')
 lasso_sd_pred <- as.numeric(lasso_sd_pred)
 compute_mse(y_test, lasso_sd_pred)
+#Random Forests
+library(randomForest)
+set.seed(999)
+rf1_sd <- randomForest(Rating ~ Category + ReviewsStd + SizeStd + Installs + Type + PriceStd + Content.Rating + Days.Std + Lowest.Android.Version, data = trainset, importance = TRUE)
+rf1_sd_pred <- predict(rf1_sd, newdata = testset)
+compute_mse(y_test, rf1_sd_pred)
 ```
 
 ```
